@@ -14,12 +14,6 @@ pipeline {
             }
         }
 
-        stage('Docker Build') {
-            steps {
-                sh 'docker build -t mi-app:latest .'
-            }
-        }
-
         stage('Test') {
             steps {
                 sh 'mvn test'
@@ -28,6 +22,33 @@ pipeline {
                 always {
                     junit 'target/surefire-reports/*.xml'
                 }
+            }
+        }
+
+        stage('Static Analysis (SonarQube)') {
+            steps {
+                script {
+                    sh 'mvn sonar:sonar -Dsonar.projectKey=my-app -Dsonar.host.url=http://sonarqube:9000'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t mi-app:latest .'
+            }
+        }
+
+        stage('Container Security Scan (Trivy)') {
+            steps {
+                sh 'trivy image mi-app:latest'
+            }
+        }
+
+        stage('Deploy') {
+            when { branch 'main' }
+            steps {
+                sh 'docker run -d -p 8080:8080 mi-app:latest'
             }
         }
     }
