@@ -55,7 +55,7 @@ pipeline {
         stage('Test') {
             steps {
                 container('maven') {
-                    sh 'mvn test'
+                    sh 'mvn test -Dmaven.surefire.forkCount=0'
                 }
             }
             post {
