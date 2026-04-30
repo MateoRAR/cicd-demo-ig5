@@ -21,7 +21,7 @@ pipeline {
                         cpu: "500m"
                     env:
                     - name: MAVEN_OPTS
-                         value: "-Xmx512m -Xms256m"
+                      value: "-Xmx512m -Xms256m"
                   - name: docker
                     image: docker:latest
                     command:
@@ -117,19 +117,14 @@ pipeline {
     post {
         always {
             echo '--- Limpieza post-pipeline ---'
-            container('docker') {
-                sh 'docker rmi mi-app:latest || true'
-            }
+            sh 'docker rmi mi-app:latest || true'
             cleanWs()
         }
         success {
             echo 'Pipeline completado exitosamente.'
         }
         failure {
-            echo 'Pipeline fallido. Revisa los artefactos: trivy-report.txt y logs de SonarQube.'
-        }
-        unstable {
-            echo 'Pipeline inestable (tests fallidos). No se desplegó.'
+            echo 'Pipeline fallido. Revisa trivy-report.txt y logs de SonarQube.'
         }
     }
 }
