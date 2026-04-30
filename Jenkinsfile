@@ -12,6 +12,16 @@ pipeline {
                     - sleep
                     args:
                     - infinity
+                    resources:
+                      limits:
+                        memory: "2Gi"
+                        cpu: "1"
+                      requests:
+                        memory: "1Gi"
+                        cpu: "500m"
+                    env:
+                    - name: MAVEN_OPTS
+                         value: "-Xmx512m -Xms256m"
                   - name: docker
                     image: docker:latest
                     command:
@@ -49,7 +59,9 @@ pipeline {
                 }
             }
             post {
-                always { junit 'target/surefire-reports/*.xml' }
+                always {
+                    junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+                }
             }
         }
 
@@ -105,7 +117,9 @@ pipeline {
     post {
         always {
             echo '--- Limpieza post-pipeline ---'
-            sh 'docker rmi mi-app:latest || true'
+            container('docker') {
+                sh 'docker rmi mi-app:latest || true'
+            }
             cleanWs()
         }
         success {
