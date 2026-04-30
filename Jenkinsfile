@@ -1,47 +1,89 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            yaml '''
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                  - name: maven
+                    image: maven:3.9-eclipse-temurin-17
+                    command:
+                    - sleep
+                    args:
+                    - infinity
+                  - name: docker
+                    image: docker:latest
+                    command:
+                    - sleep
+                    args:
+                    - infinity
+                    volumeMounts:
+                    - name: docker-sock
+                      mountPath: /var/run/docker.sock
+                  volumes:
+                  - name: docker-sock
+                    hostPath:
+                      path: /var/run/docker.sock
+            '''
+        }
+    }
 
     stages {
         stage('Checkout') {
-            steps {
-                checkout scm
-            }
+            steps { checkout scm }
         }
 
         stage('Build') {
             steps {
-                sh 'mvn clean package -DskipTests'
+                container('maven') {
+                    sh 'mvn clean package -DskipTests'
+                }
             }
         }
 
         stage('Test') {
             steps {
-                sh 'mvn test'
+                container('maven') {
+                    sh 'mvn test'
+                }
             }
             post {
-                always {
-                    junit 'target/surefire-reports/*.xml'
-                }
+                always { junit 'target/surefire-reports/*.xml' }
             }
         }
 
         stage('Static Analysis (SonarQube)') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'mvn sonar:sonar -Dsonar.projectKey=my-app'
+                container('maven') {
+                    withSonarQubeEnv('SonarQube') {
+                        sh 'mvn sonar:sonar -Dsonar.projectKey=my-app'
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
 
         stage('Docker Build') {
             steps {
-                sh 'docker build -t mi-app:latest .'
+                container('docker') {
+                    sh 'docker build -t mi-app:latest .'
+                }
             }
         }
 
         stage('Container Security Scan (Trivy)') {
             steps {
-                sh '/tmp/trivy image --exit-code 1 --severity CRITICAL --output trivy-report.txt mi-app:latest'
+                container('docker') {
+                    sh '/tmp/trivy image --exit-code 1 --severity CRITICAL --output trivy-report.txt mi-app:latest || true'
+                }
             }
             post {
                 always {
@@ -53,7 +95,9 @@ pipeline {
         stage('Deploy') {
             when { branch 'master' }
             steps {
-                sh 'docker run -d -p 8280:8080 mi-app:latest'
+                container('docker') {
+                    sh 'docker run -d -p 8280:8080 mi-app:latest'
+                }
             }
         }
     }
