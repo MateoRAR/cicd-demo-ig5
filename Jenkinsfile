@@ -104,11 +104,18 @@ pipeline {
 
     post {
         always {
-            echo 'Limpiando entorno...'
+            echo '--- Limpieza post-pipeline ---'
+            sh 'docker rmi mi-app:latest || true'
             cleanWs()
         }
+        success {
+            echo 'Pipeline completado exitosamente.'
+        }
         failure {
-            echo 'El pipeline falló. Revisar los logs para más detalles.'
+            echo 'Pipeline fallido. Revisa los artefactos: trivy-report.txt y logs de SonarQube.'
+        }
+        unstable {
+            echo 'Pipeline inestable (tests fallidos). No se desplegó.'
         }
     }
 }
