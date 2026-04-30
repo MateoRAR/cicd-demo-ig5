@@ -27,8 +27,8 @@ pipeline {
 
         stage('Static Analysis (SonarQube)') {
             steps {
-                script {
-                    sh 'mvn sonar:sonar -Dsonar.projectKey=my-app -Dsonar.host.url=http://sonarqube:9000'
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar -Dsonar.projectKey=my-app'
                 }
             }
         }
@@ -41,7 +41,12 @@ pipeline {
 
         stage('Container Security Scan (Trivy)') {
             steps {
-                sh 'trivy image mi-app:latest'
+                sh '/tmp/trivy image --exit-code 1 --severity CRITICAL --output trivy-report.txt mi-app:latest'
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                }
             }
         }
 
