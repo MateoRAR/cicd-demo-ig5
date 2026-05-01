@@ -61,7 +61,7 @@ pipeline {
         }
 
         stage('Test') {
-            steps { container('maven') { sh 'mvn test -Djacoco.skip=true' } }
+            steps { container('maven') { sh 'mvn test' } }
             post { always { junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml' } }
         }
 
