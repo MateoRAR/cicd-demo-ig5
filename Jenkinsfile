@@ -89,36 +89,58 @@ pipeline {
                 container('docker') {
                     withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
+                            set -e
+                            apk add --no-cache curl jq > /dev/null 2>&1
+
+                            # Esperar a que el análisis termine
                             TIMEOUT=120
                             ELAPSED=0
+                            ANALYSIS_DONE=false
                             while [ $ELAPSED -lt $TIMEOUT ]; do
-                                STATUS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/ce/component?component=my-app" 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+                                CE_RESPONSE=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/ce/component?component=my-app" 2>/dev/null || echo '{}')
+                                STATUS=$(echo "$CE_RESPONSE" | jq -r '.task.status // empty' 2>/dev/null || echo "")
+
                                 if [ "$STATUS" = "SUCCESS" ]; then
+                                    echo "Análisis completado correctamente"
+                                    ANALYSIS_DONE=true
                                     break
                                 elif [ "$STATUS" = "FAILED" ]; then
                                     echo "Análisis de SonarQube fallido"
                                     exit 1
+                                elif [ "$STATUS" = "PENDING" ] || [ "$STATUS" = "IN_PROGRESS" ]; then
+                                    echo "Esperando análisis de SonarQube... ($STATUS)"
                                 fi
-                                echo "Esperando análisis de SonarQube..."
                                 sleep 5
                                 ELAPSED=$((ELAPSED + 5))
                             done
-                            if [ $ELAPSED -ge $TIMEOUT ]; then
-                                echo "Timeout esperando análisis de SonarQube"
-                                exit 1
+
+                            if [ "$ANALYSIS_DONE" = false ]; then
+                                echo "Timeout o sin tarea activa. Procediendo con verificación..."
                             fi
-                            QG_STATUS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/qualitygates/project_status?projectKey=my-app" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+                            # Verificar Quality Gate
+                            QG_RESPONSE=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/qualitygates/project_status?projectKey=my-app")
+                            QG_STATUS=$(echo "$QG_RESPONSE" | jq -r '.projectStatus.status')
                             echo "Quality Gate Status: $QG_STATUS"
+
                             if [ "$QG_STATUS" != "OK" ]; then
                                 echo "Quality Gate FAILED!"
+                                echo "$QG_RESPONSE" | jq .
                                 exit 1
                             fi
-                            HOTSPOTS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/hotspots/search?projectKey=my-app" | grep -o '"status":"[^"]*"' | grep -v "REVIEWED" | wc -l)
+
+                            # Verificar Security Hotspots
+                            HOTSPOT_RESPONSE=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/hotspots/search?projectKey=my-app")
+                            HOTSPOTS=$(echo "$HOTSPOT_RESPONSE" | jq '[.hotspots[] | select(.status != "REVIEWED")] | length')
                             echo "Security Hotspots sin revisar: $HOTSPOTS"
+
                             if [ "$HOTSPOTS" -gt 0 ]; then
                                 echo "Security Hotspots detectados! Pipeline fallido."
+                                echo "$HOTSPOT_RESPONSE" | jq .
                                 exit 1
                             fi
+
+                            echo "Quality Gate y Security Hotspots: OK"
                         '''
                     }
                 }
