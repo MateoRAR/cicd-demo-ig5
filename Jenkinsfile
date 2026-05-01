@@ -87,7 +87,7 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 container('docker') {
-                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             TIMEOUT=120
                             ELAPSED=0
