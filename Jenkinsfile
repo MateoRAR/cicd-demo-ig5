@@ -39,6 +39,10 @@ pipeline {
         }
     }
 
+    environment {
+        SONAR_HOST_URL = 'http://sonarqube-sonarqube:9000'
+    }
+
     stages {
         stage('Checkout') {
             steps { checkout scm }
@@ -68,8 +72,13 @@ pipeline {
         stage('Static Analysis (SonarQube)') {
             steps {
                 container('maven') {
-                    withSonarQubeEnv('SonarQube') {
-                        sh 'mvn sonar:sonar -Dsonar.projectKey=my-app'
+                    withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            mvn sonar:sonar \
+                                -Dsonar.host.url=$SONAR_HOST_URL \
+                                -Dsonar.projectKey=my-app \
+                                -Dsonar.login=$SONAR_TOKEN
+                        '''
                     }
                 }
             }
@@ -77,8 +86,41 @@ pipeline {
 
         stage('Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                container('docker') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            TIMEOUT=120
+                            ELAPSED=0
+                            while [ $ELAPSED -lt $TIMEOUT ]; do
+                                STATUS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/ce/component?component=my-app" 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+                                if [ "$STATUS" = "SUCCESS" ]; then
+                                    break
+                                elif [ "$STATUS" = "FAILED" ]; then
+                                    echo "Análisis de SonarQube fallido"
+                                    exit 1
+                                fi
+                                echo "Esperando análisis de SonarQube..."
+                                sleep 5
+                                ELAPSED=$((ELAPSED + 5))
+                            done
+                            if [ $ELAPSED -ge $TIMEOUT ]; then
+                                echo "Timeout esperando análisis de SonarQube"
+                                exit 1
+                            fi
+                            QG_STATUS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/qualitygates/project_status?projectKey=my-app" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+                            echo "Quality Gate Status: $QG_STATUS"
+                            if [ "$QG_STATUS" != "OK" ]; then
+                                echo "Quality Gate FAILED!"
+                                exit 1
+                            fi
+                            HOTSPOTS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/hotspots/search?projectKey=my-app" | grep -o '"status":"[^"]*"' | grep -v "REVIEWED" | wc -l)
+                            echo "Security Hotspots sin revisar: $HOTSPOTS"
+                            if [ "$HOTSPOTS" -gt 0 ]; then
+                                echo "Security Hotspots detectados! Pipeline fallido."
+                                exit 1
+                            fi
+                        '''
+                    }
                 }
             }
         }
