@@ -51,7 +51,15 @@ pipeline {
             steps {
                 container('maven') {
                     withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
-                        sh 'mvn sonar:sonar -Dsonar.host.url=$SONAR_HOST_URL -Dsonar.projectKey=my-app -Dsonar.token=$SONAR_TOKEN'
+                        sh '''
+                            mvn sonar:sonar \
+                                -Dsonar.host.url=$SONAR_HOST_URL \
+                                -Dsonar.projectKey=my-app \
+                                -Dsonar.token=$SONAR_TOKEN \
+                                -Dsonar.projectName=my-app \
+                                -Dsonar.qualitygate.wait=true \
+                                -Dsonar.qualitygate.timeout=120
+                        '''
                     }
                 }
             }
@@ -60,21 +68,31 @@ pipeline {
         stage('Quality Gate & Hotspots') {
             steps {
                 container('docker') {
-                    withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                    withCredentials([
+                        string(credentialsId: 'sonarqube-user-token', variable: 'USER_TOKEN')
+                    ]) {
                         sh '''
                             apk add --no-cache curl jq > /dev/null 2>&1
+
+                            # Verificar Quality Gate
+                            echo "Verificando Quality Gate..."
                             for i in $(seq 1 24); do
-                                RESP=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/ce/component?component=my-app")
-                                [[ "$RESP" =~ errors ]] && sleep 5 && continue
-                                STATUS=$(echo "$RESP" | jq -r '.current.status // ""')
-                                [ "$STATUS" = "SUCCESS" ] && break
-                                [ "$STATUS" = "FAILED" ] && exit 1
+                                QG=$(curl -s -H "Authorization: Bearer $USER_TOKEN" "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=my-app" 2>/dev/null | jq -r '.projectStatus.status // "ERROR"')
+                                if [ "$QG" != "ERROR" ]; then
+                                    echo "Quality Gate: $QG"
+                                    [ "$QG" != "OK" ] && echo "Quality Gate FAILED!" && exit 1
+                                    break
+                                fi
+                                echo "Esperando Quality Gate... ($i)"
                                 sleep 5
                             done
-                            QG=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=my-app" | jq -r '.projectStatus.status // "ERROR"')
-                            [ "$QG" != "OK" ] && echo "Quality Gate FAILED!" && exit 1
-                            HOTSPOTS=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/hotspots/search?projectKey=my-app" | jq '[.hotspots[]? | select(.status != "REVIEWED")] | length' 2>/dev/null || echo 0)
+
+                            # Security Hotspots
+                            echo "Verificando Security Hotspots..."
+                            HOTSPOTS=$(curl -s -H "Authorization: Bearer $USER_TOKEN" "$SONAR_HOST_URL/api/hotspots/search?projectKey=my-app" 2>/dev/null | jq '[.hotspots[]? | select(.status != "REVIEWED")] | length' 2>/dev/null || echo 0)
+                            echo "Security Hotspots sin revisar: $HOTSPOTS"
                             [ "$HOTSPOTS" -gt 0 ] && echo "Security Hotspots detectados!" && exit 1
+                            echo "Sin Security Hotspots pendientes"
                         '''
                     }
                 }
