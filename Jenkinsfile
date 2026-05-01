@@ -65,6 +65,10 @@ pipeline {
             post { always { junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml' } }
         }
 
+        stage('Jacoco Report') {
+            steps { container('maven') { sh 'mvn jacoco:report' } }
+        }
+
         stage('SonarQube Analysis') {
             steps {
                 container('maven') {
@@ -76,7 +80,8 @@ pipeline {
                                 -Dsonar.token=$SONAR_TOKEN \
                                 -Dsonar.projectName=my-app \
                                 -Dsonar.qualitygate.wait=true \
-                                -Dsonar.qualitygate.timeout=120
+                                -Dsonar.qualitygate.timeout=120 \
+                                -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
                         '''
                     }
                 }

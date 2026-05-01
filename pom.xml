@@ -47,6 +47,11 @@
             <version>4.13.2</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
 
 	<dependency>
             <groupId>org.seleniumhq.selenium</groupId>
@@ -77,17 +82,24 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.0.0-M7</version>
-                <configuration>
-                    <forkCount>1</forkCount>
-                    <reuseForks>true</reuseForks>
-                    <argLine>${argLine} -Xmx512m</argLine>
-                    <excludedGroups>au.com.equifax.cicddemo.domain.IntegrationTest,au.com.equifax.cicddemo.domain.SystemTest</excludedGroups>
-                </configuration>
-            </plugin>
+             <plugin>
+                 <groupId>org.apache.maven.plugins</groupId>
+                 <artifactId>maven-surefire-plugin</artifactId>
+                 <version>3.1.2</version>
+                 <configuration>
+                     <forkCount>1</forkCount>
+                     <reuseForks>true</reuseForks>
+                     <argLine>${argLine} -Xmx512m</argLine>
+                     <excludedGroups>au.com.equifax.cicddemo.domain.IntegrationTest,au.com.equifax.cicddemo.domain.SystemTest</excludedGroups>
+                 </configuration>
+                 <dependencies>
+                     <dependency>
+                         <groupId>org.junit.vintage</groupId>
+                         <artifactId>junit-vintage-engine</artifactId>
+                         <version>5.9.2</version>
+                     </dependency>
+                 </dependencies>
+             </plugin>
             <plugin>
                 
                 <groupId>org.sonarsource.scanner.maven</groupId>
