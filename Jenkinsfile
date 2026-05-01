@@ -130,7 +130,9 @@ pipeline {
             }
             post {
                 always {
-                    sh 'trivy image --severity CRITICAL,HIGH --format table --output trivy-report.txt mi-app:latest || true'
+                    container('docker') {
+                        sh 'trivy image --severity CRITICAL,HIGH --format table --output trivy-report.txt mi-app:latest || true'
+                    }
                     archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
                 }
             }
