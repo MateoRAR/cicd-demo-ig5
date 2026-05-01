@@ -16,21 +16,28 @@ pipeline {
                       limits:
                         memory: "2Gi"
                         cpu: "1"
+                  - name: dind
+                    image: docker:dind
+                    securityContext:
+                      privileged: true
+                    env:
+                    - name: DOCKER_TLS_CERTDIR
+                      value: ""
+                    volumeMounts:
+                    - name: docker-storage
+                      mountPath: /var/lib/docker
                   - name: docker
                     image: docker:latest
                     command:
                     - sleep
                     args:
                     - infinity
-                    securityContext:
-                      privileged: true
-                    volumeMounts:
-                    - name: docker-sock
-                      mountPath: /var/run/docker.sock
+                    env:
+                    - name: DOCKER_HOST
+                      value: tcp://localhost:2375
                   volumes:
-                  - name: docker-sock
-                    hostPath:
-                      path: /var/run/docker.sock
+                  - name: docker-storage
+                    emptyDir: {}
             '''
         }
     }
@@ -102,7 +109,14 @@ pipeline {
         }
 
         stage('Docker Build') {
-            steps { container('docker') { sh 'docker build -t mi-app:latest .' } }
+            steps {
+                container('docker') {
+                    sh '''
+                        until docker info > /dev/null 2>&1; do echo "Waiting for Docker daemon..."; sleep 2; done
+                        docker build -t mi-app:latest .
+                    '''
+                }
+            }
         }
 
         stage('Trivy Scan') {
