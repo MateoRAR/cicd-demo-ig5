@@ -137,9 +137,9 @@ pipeline {
             post {
                 always {
                     container('trivy') {
-                        sh 'trivy image --severity CRITICAL,HIGH --format table --output trivy-report.txt mi-app:latest || true'
+                        sh 'trivy image --severity CRITICAL,HIGH --format json --output trivy-report.json mi-app:latest || true'
                     }
-                    archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'trivy-report.json', allowEmptyArchive: true
                 }
             }
         }
