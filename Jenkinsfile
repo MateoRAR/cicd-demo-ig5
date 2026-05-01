@@ -8,13 +8,27 @@ pipeline {
                   containers:
                   - name: maven
                     image: maven:3.9-eclipse-temurin-17
-                    command: [sleep]; args: [infinity]
-                    resources: { limits: { memory: "2Gi", cpu: "1" } }
+                    command:
+                    - sleep
+                    args:
+                    - infinity
+                    resources:
+                      limits:
+                        memory: "2Gi"
+                        cpu: "1"
                   - name: docker
                     image: docker:latest
-                    command: [sleep]; args: [infinity]
-                    volumeMounts: [{ name: docker-sock, mountPath: /var/run/docker.sock }]
-                  volumes: [{ name: docker-sock, hostPath: { path: /var/run/docker.sock } }]
+                    command:
+                    - sleep
+                    args:
+                    - infinity
+                    volumeMounts:
+                    - name: docker-sock
+                      mountPath: /var/run/docker.sock
+                  volumes:
+                  - name: docker-sock
+                    hostPath:
+                      path: /var/run/docker.sock
             '''
         }
     }
@@ -103,7 +117,6 @@ pipeline {
 
     post {
         always {
-            container('docker') { sh 'docker stop mi-app || true; docker rm mi-app || true; docker rmi mi-app:latest || true' }
             cleanWs()
         }
         success { echo 'Pipeline exitoso - App en http://localhost:80' }
