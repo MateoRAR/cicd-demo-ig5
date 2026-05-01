@@ -47,7 +47,7 @@ pipeline {
         stage('Build') {
             steps {
                 container('maven') {
-                    sh 'mvn clean package -DskipTests'
+                    sh 'mvn clean package -DskipTests -Dmaven.surefire.forkCount=0'
                 }
             }
         }
