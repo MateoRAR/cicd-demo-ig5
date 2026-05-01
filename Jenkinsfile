@@ -35,6 +35,15 @@ pipeline {
                     env:
                     - name: DOCKER_HOST
                       value: tcp://localhost:2375
+                  - name: trivy
+                    image: aquasec/trivy:latest
+                    command:
+                    - sleep
+                    args:
+                    - infinity
+                    env:
+                    - name: DOCKER_HOST
+                      value: tcp://localhost:2375
                   volumes:
                   - name: docker-storage
                     emptyDir: {}
@@ -121,16 +130,13 @@ pipeline {
 
         stage('Trivy Scan') {
             steps {
-                container('docker') {
-                    sh '''
-                        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.50.0
-                        trivy image --exit-code 1 --severity CRITICAL mi-app:latest
-                    '''
+                container('trivy') {
+                    sh 'trivy image --exit-code 1 --severity CRITICAL mi-app:latest'
                 }
             }
             post {
                 always {
-                    container('docker') {
+                    container('trivy') {
                         sh 'trivy image --severity CRITICAL,HIGH --format table --output trivy-report.txt mi-app:latest || true'
                     }
                     archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
