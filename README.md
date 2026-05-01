@@ -1,15 +1,15 @@
 
 # CICD-DEMO
 
-This project aims to be the basic skeleton to apply continuous integration and continuous delivery.
+Proyecto de demostración de CI/CD con Spring Boot, Jenkins, SonarQube y Trivy.
 
 ## Topology
 
-CICD Demo uses some kubernetes primitives to deploy:
+CICD Demo usa Kubernetes para el despliegue:
 
 * Deployment
 * Services
-* Ingress ( with TLS )
+* Ingress (con TLS)
 
 ```bash
      internet
@@ -19,71 +19,152 @@ CICD Demo uses some kubernetes primitives to deploy:
    [ Services ]
    --|-----|--
    [   Pods   ]
-
 ```
 
-This project includes:
+## Componentes del Proyecto
 
-* Spring Boot java app
-* Jenkinsfile integration to run pipelines
-* Dockerfile containing the base image to run java apps
-* Makefile and docker-compose to make the pipeline steps much simpler
-* Kubernetes deployment file demonstrating how to deploy this app in a simple Kubernetes cluster
+* Spring Boot Java app
+* Jenkinsfile con pipeline completo
+* Dockerfile para la aplicación
+* Makefile y docker-compose
+* Despliegue en Kubernetes
 
-## Pipeline Setup
+## Flujo CI/CD (Pipeline)
 
-Pipelines exist at Travis.
+El pipeline está configurado en el `Jenkinsfile` y consta de las siguientes etapas:
 
-Some pipelines are configured by **GitHub/Projects**. If you have created a repository in one of these, your project will be **automatically** built if it has a Jenkinsfile/Travis/Gitlab/CircleCI.
+### 1. Checkout
+Descarga el código fuente del repositorio.
 
-Other pipelines are configured manually under folders. You can create a project manually with the following steps:
+### 2. Build
+Compila el proyecto con Maven:
+```bash
+mvn clean package -DskipTests
+```
 
-How to run the app:
+### 3. Test
+Ejecuta las pruebas unitarias:
+```bash
+mvn test -Djacoco.skip=true
+```
 
-```make
+### 4. Static Analysis (SonarQube)
+Ejecuta análisis estático de código usando SonarQube:
+- Se conecta a SonarQube usando token de autenticación
+- Analiza el código en busca de bugs, vulnerabilidades y code smells
+- Espera a que el análisis termine antes de continuar
+
+### 5. Quality Gate
+Verifica las puertas de calidad:
+- **Quality Gate**: El proyecto debe pasar las condiciones de calidad configuradas
+- **Security Hotspots**: El pipeline falla si hay Security Hotspots sin revisar
+- Si no pasa estas validaciones, el pipeline se detiene
+
+### 6. Docker Build
+Construye la imagen Docker:
+```bash
+docker build -t mi-app:latest .
+```
+
+### 7. Install Trivy
+Instala Trivy para escaneo de vulnerabilidades en la imagen.
+
+### 8. Container Security Scan (Trivy)
+Escanea la imagen Docker en busca de vulnerabilidades:
+- Falla si encuentra vulnerabilidades de nivel **CRITICAL**
+- Genera reporte con vulnerabilidades HIGH y CRITICAL
+
+### 9. Deploy
+Despliega la aplicación localmente (solo en ramas master/main):
+```bash
+docker run -d --name mi-app --restart=unless-stopped -p 80:80 mi-app:latest
+```
+
+## Puertas de Calidad (Gatekeeping)
+
+El pipeline fallará automáticamente si:
+1. SonarQube detecta un "Security Hotspot" sin revisar
+2. Trivy encuentra vulnerabilidades de nivel "CRITICAL" en la imagen
+
+## Limpieza e Infraestructura
+
+El bloque `post` del pipeline:
+- **always**: Limpia contenedores, imágenes y el workspace
+- **success**: Notifica despliegue exitoso
+- **failure**: Muestra logs de error y reporte de Trivy
+- **unstable**: Notifica alertas de calidad
+
+## Requisitos Previos
+
+1. **Kind Cluster** (Kubernetes en Docker)
+2. **Jenkins** desplegado en Kubernetes
+3. **SonarQube** ejecutándose (accesible en `http://sonarqube-sonarqube:9000`)
+4. **Docker** configurado en los nodos
+5. **Credenciales configuradas en Jenkins**:
+   - `sonarqube-token`: Token de autenticación de SonarQube
+
+## Cómo ejecutar la aplicación localmente
+
+```bash
 make
+```
+
+O con Docker:
+```bash
+docker build -t mi-app:latest .
+docker run -d -p 80:80 mi-app:latest
 ```
 
 ## Testing
 
-Unit tests and integrations tests are separated using [JUnit Categories][].
+Las pruebas se separan usando [JUnit Categories][].
 
 [JUnit Categories]: https://maven.apache.org/surefire/maven-surefire-plugin/examples/junit.html
 
 ### Unit Tests
-
-```java
+```bash
 mvn test -Dgroups=UnitTest
 ```
 
-Or using Docker:
-
-```bash
-make build
-```
-
 ### Integration Tests
-
-```java
+```bash
 mvn integration-test -Dgroups=IntegrationTests
 ```
 
-Or using Docker:
+## Prueba del Pipeline
 
+Para probar el pipeline completo:
+
+1. Haz un cambio en el código (ej. `src/main/resources/templates/index.html`)
+2. Commit y push al repositorio
+3. Jenkins detectará el cambio automáticamente
+4. El pipeline ejecutará: build → test → análisis → escaneo → despliegue
+5. Si pasa todas las validaciones, se desplegará la nueva versión automáticamente
+
+### Ejemplo de cambio para probar:
 ```bash
-make integrationTest
+# Editar el archivo para simular un cambio
+echo "<h1>Nueva versión desplegada!</h1>" > src/main/resources/templates/index.html
+git add .
+git commit -m "Actualización de prueba"
+git push origin master
 ```
 
-### System Tests
+## Visualización de Resultados de Trivy
 
-System tests run with Selenium using docker-compose to run a [Selenium standalone container][] with Chrome.
+Para ver la salida del escaneo de Trivy:
 
-[Selenium standalone container]: https://github.com/SeleniumHQ/docker-selenium
+1. **Logs del pipeline**: La salida completa del comando `trivy image` se muestra en la etapa "Container Security Scan (Trivy)" de los logs del build en Jenkins.
+2. **Artefactos del build**: El reporte `trivy-report.txt` (con vulnerabilidades CRITICAL y HIGH) se archiva automáticamente y está disponible en la página del build → pestaña "Artifacts".
+3. **Notificaciones de fallo**: Si el pipeline falla por vulnerabilidades CRITICAL, el mensaje de error indica revisar `trivy-report.txt`.
 
-Using Docker:
+## Troubleshooting
 
-* If you are running locally, make sure the `$APP_URL` is populated and points to a valid instance of your application. This variable is populated automatically in Jenkins.
+### Error: "Insufficient privileges" en SonarQube
+- Verifica que el token en Jenkins (`sonarqube-token`) tenga permisos en el proyecto
+- Asegúrate de que el proyecto `my-app` exista en SonarQube o se cree automáticamente
+- El token debe tener permisos de `Execute Analysis`
 
-```bash
-APP_URL=http://dev-cicd-demo-master.anzcd.internal/ make systemTest
-```
+### Error en Hotspots API
+- El pipeline ahora maneja respuestas null de la API de hotspots
+- Si el proyecto es nuevo, puede tomar tiempo en aparecer en SonarQube

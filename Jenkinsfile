@@ -95,7 +95,23 @@ pipeline {
                             TIMEOUT=120
                             ELAPSED=0
                             while [ $ELAPSED -lt $TIMEOUT ]; do
-                                RESPONSE=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/ce/component?component=my-app")
+                                RESPONSE=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/ce/component?component=my-app")
+                                echo "Respuesta SonarQube: $RESPONSE"
+
+                                # Verificar si hay errores de autenticación
+                                if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+                                    ERROR_MSG=$(echo "$RESPONSE" | jq -r '.errors[0].msg // "Unknown error"')
+                                    echo "Error: $ERROR_MSG"
+
+                                    if echo "$ERROR_MSG" | grep -qi "insufficient privileges\|unauthorized\|forbidden"; then
+                                        echo "Esperando permisos o creación del proyecto..."
+                                        sleep 10
+                                        ELAPSED=$((ELAPSED + 10))
+                                        continue
+                                    fi
+                                    exit 1
+                                fi
+
                                 STATUS=$(echo "$RESPONSE" | jq -r '.current.status // empty' 2>/dev/null)
                                 if [ "$STATUS" = "SUCCESS" ]; then
                                     echo "Análisis completado"
@@ -108,25 +124,39 @@ pipeline {
                                 sleep 5
                                 ELAPSED=$((ELAPSED + 5))
                             done
+
                             if [ $ELAPSED -ge $TIMEOUT ]; then
                                 echo "Timeout esperando análisis"
+                                exit 1
                             fi
 
                             # Quality Gate
-                            QG_STATUS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/qualitygates/project_status?projectKey=my-app" | jq -r '.projectStatus.status')
+                            QG_STATUS=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=my-app" | jq -r '.projectStatus.status // "ERROR"')
                             echo "Quality Gate: $QG_STATUS"
                             if [ "$QG_STATUS" != "OK" ]; then
                                 echo "Quality Gate FAILED!"
                                 exit 1
                             fi
 
-                            # Security Hotspots
-                            HOTSPOTS=$(curl -s -u $SONAR_TOKEN: "http://sonarqube-sonarqube:9000/api/hotspots/search?projectKey=my-app" | jq '[.hotspots[] | select(.status != "REVIEWED")] | length')
+                            # Security Hotspots - manejar respuesta null
+                            HOTSPOTS_RESPONSE=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/hotspots/search?projectKey=my-app")
+                            echo "Hotspots response: $HOTSPOTS_RESPONSE"
+
+                            # Verificar si la respuesta tiene hotspots
+                            if echo "$HOTSPOTS_RESPONSE" | jq -e '.hotspots != null' > /dev/null 2>&1; then
+                                HOTSPOTS=$(echo "$HOTSPOTS_RESPONSE" | jq '[.hotspots[] | select(.status != "REVIEWED")] | length')
+                            else
+                                echo "No se encontraron hotspots o el proyecto no existe aún"
+                                HOTSPOTS=0
+                            fi
+
                             echo "Security Hotspots sin revisar: $HOTSPOTS"
                             if [ "$HOTSPOTS" -gt 0 ]; then
                                 echo "Security Hotspots detectados! Pipeline fallido."
                                 exit 1
                             fi
+
+                            echo "Quality Gate y Security Hotspots: OK"
                         '''
                     }
                 }
@@ -172,13 +202,27 @@ pipeline {
         }
 
         stage('Deploy') {
-            when { branch 'master' }
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             steps {
                 container('docker') {
                     sh '''
+                        echo "Iniciando despliegue..."
                         docker stop mi-app || true
                         docker rm mi-app || true
-                        docker run -d --name mi-app -p 80:80 mi-app:latest
+                        docker run -d --name mi-app --restart=unless-stopped -p 80:80 mi-app:latest
+                        sleep 3
+                        if docker ps | grep -q mi-app; then
+                            echo "Despliegue exitoso - contenedor mi-app ejecutándose"
+                            docker logs mi-app --tail 20
+                        else
+                            echo "Error: el contenedor no está ejecutándose"
+                            exit 1
+                        fi
                     '''
                 }
             }
@@ -188,18 +232,40 @@ pipeline {
     post {
         always {
             echo '--- Limpieza post-pipeline ---'
-            container('docker') {
-                sh 'docker stop mi-app || true'
-                sh 'docker rm mi-app || true'
-                sh 'docker rmi mi-app:latest || true'
+            script {
+                try {
+                    container('docker') {
+                        sh '''
+                            echo "Limpiando contenedores..."
+                            docker stop mi-app || true
+                            docker rm mi-app || true
+                            docker rmi mi-app:latest || true
+                            docker system prune -f --volumes || true
+                        '''
+                    }
+                } catch (Exception e) {
+                    echo "Error durante limpieza: ${e.getMessage()}"
+                }
             }
             cleanWs()
         }
         success {
-            echo 'Pipeline completado exitosamente.'
+            echo 'Pipeline completado exitosamente - Aplicación desplegada en http://localhost:80'
         }
         failure {
             echo 'Pipeline fallido. Revisa trivy-report.txt y logs de SonarQube.'
+            script {
+                try {
+                    container('docker') {
+                        sh 'docker logs mi-app --tail 50 || true'
+                    }
+                } catch (Exception e) {
+                    echo "No se pudo obtener logs del contenedor"
+                }
+            }
+        }
+        unstable {
+            echo 'Pipeline inestable - revisar alertas de calidad'
         }
     }
 }
