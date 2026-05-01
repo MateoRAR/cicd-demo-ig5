@@ -55,7 +55,7 @@ pipeline {
         stage('Test') {
             steps {
                 container('maven') {
-                    sh 'mvn test'
+                    sh 'mvn test -Djacoco.skip=true'
                 }
             }
             post {
