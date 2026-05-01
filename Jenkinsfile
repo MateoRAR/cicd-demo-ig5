@@ -47,7 +47,7 @@ pipeline {
         stage('Build') {
             steps {
                 container('maven') {
-                    sh 'mvn clean package -DskipTests -Dmaven.surefire.forkCount=0'
+                    sh 'mvn clean package -DskipTests'
                 }
             }
         }
@@ -55,7 +55,7 @@ pipeline {
         stage('Test') {
             steps {
                 container('maven') {
-                    sh 'mvn test -Dmaven.surefire.forkCount=0'
+                    sh 'mvn test'
                 }
             }
             post {
@@ -91,15 +91,32 @@ pipeline {
             }
         }
 
+        stage('Install Trivy') {
+            steps {
+                container('docker') {
+                    sh '''
+                        apk add --no-cache curl tar
+                        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.50.0
+                        trivy --version
+                    '''
+                }
+            }
+        }
+
         stage('Container Security Scan (Trivy)') {
             steps {
                 container('docker') {
-                    sh '/tmp/trivy image --exit-code 1 --severity CRITICAL --output trivy-report.txt mi-app:latest || true'
+                    sh '''
+                        trivy image --exit-code 1 --severity CRITICAL mi-app:latest
+                    '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                    script {
+                        sh 'trivy image --severity CRITICAL,HIGH --format table --output trivy-report.txt mi-app:latest || true'
+                        archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                    }
                 }
             }
         }
@@ -108,7 +125,11 @@ pipeline {
             when { branch 'master' }
             steps {
                 container('docker') {
-                    sh 'docker run -d -p 8280:8080 mi-app:latest'
+                    sh '''
+                        docker stop mi-app || true
+                        docker rm mi-app || true
+                        docker run -d --name mi-app -p 80:80 mi-app:latest
+                    '''
                 }
             }
         }
@@ -117,7 +138,11 @@ pipeline {
     post {
         always {
             echo '--- Limpieza post-pipeline ---'
-            sh 'docker rmi mi-app:latest || true'
+            container('docker') {
+                sh 'docker stop mi-app || true'
+                sh 'docker rm mi-app || true'
+                sh 'docker rmi mi-app:latest || true'
+            }
             cleanWs()
         }
         success {
