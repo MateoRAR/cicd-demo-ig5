@@ -22,6 +22,8 @@ pipeline {
                     - sleep
                     args:
                     - infinity
+                    securityContext:
+                      privileged: true
                     volumeMounts:
                     - name: docker-sock
                       mountPath: /var/run/docker.sock
