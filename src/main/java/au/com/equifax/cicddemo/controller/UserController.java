@@ -15,7 +15,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import au.com.equifax.cicddemo.domain.User;
 import au.com.equifax.cicddemo.service.UserService;
 
-@RestController("")
+@RestController("userController")
 public class UserController {
 
     private UserService service;
@@ -31,11 +31,14 @@ public class UserController {
     @GetMapping("/users/{id}")
     public User retrieveStudent(@PathVariable long id) {
         Optional<User> student = service.findById(id);
-        return student.get();
+        if (student.isPresent()) {
+            return student.get();
+        }
+        return null;
     }
     @PostMapping("/users")
     public ResponseEntity<Object> createStudent(@RequestBody User user) {
-        User savedUser = service.save(user);
+        service.save(user);
 
         URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}")
                 .buildAndExpand(user.getId()).toUri();
