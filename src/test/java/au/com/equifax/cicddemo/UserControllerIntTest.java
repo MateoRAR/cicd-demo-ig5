@@ -1,7 +1,6 @@
 package au.com.equifax.cicddemo;
 
 import au.com.equifax.cicddemo.domain.IntegrationTest;
-import au.com.equifax.cicddemo.domain.UnitTest;
 import au.com.equifax.cicddemo.domain.User;
 import org.json.JSONException;
 import org.junit.Assert;

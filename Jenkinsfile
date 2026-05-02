@@ -134,7 +134,7 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 container('trivy') {
-                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed mi-app:latest'
+                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignorefile .trivyignore mi-app:latest'
                 }
             }
             post {
@@ -148,13 +148,56 @@ pipeline {
         }
 
         stage('Deploy') {
-            when { branch 'master' }
             steps {
                 container('docker') {
                     sh '''
-                        docker stop mi-app || true; docker rm mi-app || true
-                        docker run -d --name mi-app -p 80:80 mi-app:latest
+                        echo "Waiting for Docker daemon..."
+                        until docker info > /dev/null 2>&1; do 
+                            sleep 2
+                        done
+                        
+                        echo "Cleaning up previous container if exists..."
+                        docker stop mi-app || true
+                        docker rm mi-app || true
+                        sleep 1
+                        
+                        echo "Deploying application..."
+                        docker run -d \
+                            --name mi-app \
+                            -p 80:80 \
+                            --restart=unless-stopped \
+                            mi-app:latest
+                        
+                        sleep 3
+                        
+                        if docker ps | grep -q mi-app; then
+                            echo "Container deployed successfully"
+                            echo "Application available at: http://localhost:80"
+                        else
+                            echo "ERROR: Container is not running"
+                            docker logs mi-app || true
+                            exit 1
+                        fi
                     '''
+                }
+            }
+            post {
+                failure {
+                    container('docker') {
+                        sh '''
+                            echo "DEPLOY FAILED - Diagnostic information:"
+                            echo "======================================="
+                            echo ""
+                            echo "Container status:"
+                            docker ps -a --filter "name=mi-app" || echo "No mi-app container found"
+                            echo ""
+                            echo "Container logs:"
+                            docker logs mi-app 2>/dev/null || echo "No logs available"
+                            echo ""
+                            echo "Image status:"
+                            docker images | grep mi-app || echo "No mi-app image found"
+                        '''
+                    }
                 }
             }
         }
@@ -164,7 +207,11 @@ pipeline {
         always {
             cleanWs()
         }
-        success { echo 'Pipeline exitoso - App en http://localhost:80' }
-        failure { echo 'Pipeline fallido. Revisa trivy-report.txt y logs de SonarQube.' }
+        success { 
+            echo 'Pipeline successful - Application deployed at http://localhost:80'
+        }
+        failure { 
+            echo 'Pipeline failed. Review logs above for details.'
+        }
     }
 }
