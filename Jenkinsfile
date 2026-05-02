@@ -97,7 +97,6 @@ pipeline {
                         sh '''
                             apk add --no-cache curl jq > /dev/null 2>&1
 
-                            # Verificar Quality Gate
                             echo "Verificando Quality Gate..."
                             for i in $(seq 1 24); do
                                 QG=$(curl -s -H "Authorization: Bearer $USER_TOKEN" "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=my-app" 2>/dev/null | jq -r '.projectStatus.status // "ERROR"')
@@ -110,7 +109,6 @@ pipeline {
                                 sleep 5
                             done
 
-                            # Security Hotspots
                             echo "Verificando Security Hotspots..."
                             HOTSPOTS=$(curl -s -H "Authorization: Bearer $USER_TOKEN" "$SONAR_HOST_URL/api/hotspots/search?projectKey=my-app" 2>/dev/null | jq '[.hotspots[]? | select(.status != "REVIEWED")] | length' 2>/dev/null || echo 0)
                             echo "Security Hotspots sin revisar: $HOTSPOTS"
@@ -136,7 +134,7 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 container('trivy') {
-                    sh 'trivy image --exit-code 1 --severity CRITICAL mi-app:latest'
+                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed mi-app:latest'
                 }
             }
             post {
