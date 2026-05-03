@@ -152,62 +152,34 @@ pipeline {
                 container('docker') {
                     sh '''
                         echo "Waiting for Docker daemon..."
-                        until docker info > /dev/null 2>&1; do sleep 2; done
+                        until docker info > /dev/null 2>&1; do 
+                            sleep 2
+                        done
                         
-                        echo "Saving image..."
-                        docker save mi-app:latest -o /tmp/mi-app.tar
+                        echo "Cleaning up previous container if exists..."
+                        docker stop mi-app || true
+                        docker rm mi-app || true
+                        sleep 1
+                        
+                        echo "Deploying application..."
+                        docker run -d \
+                            --name mi-app \
+                            -p 80:80 \
+                            --restart=unless-stopped \
+                            mi-app:latest
+                        
+                        sleep 3
+                        
+                        if docker ps | grep -q mi-app; then
+                            echo "Container deployed successfully"
+                            echo "Application available at: http://localhost:80"
+                        else
+                            echo "ERROR: Container is not running"
+                            docker logs mi-app || true
+                            exit 1
+                        fi
                     '''
                 }
-            }
-        }
-        
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh '''
-                    echo "Loading image into cluster..."
-                    docker load -i /tmp/mi-app.tar 2>/dev/null || true
-                    
-                    echo "Deploying..."
-                    kubectl apply -f - <<EOF
-                    apiVersion: apps/v1
-                    kind: Deployment
-                    metadata:
-                      name: mi-app
-                    spec:
-                      replicas: 1
-                      selector:
-                        matchLabels:
-                          app: mi-app
-                      template:
-                        metadata:
-                          labels:
-                            app: mi-app
-                        spec:
-                          containers:
-                          - name: mi-app
-                            image: mi-app:latest
-                            imagePullPolicy: IfNotPresent
-                            ports:
-                            - containerPort: 8080
-                    ---
-                    apiVersion: v1
-                    kind: Service
-                    metadata:
-                      name: mi-app
-                    spec:
-                      selector:
-                        app: mi-app
-                      ports:
-                      - port: 3000
-                        targetPort: 8080
-                    EOF
-                    
-                    echo "Waiting for pod..."
-                    kubectl rollout status deployment/mi-app --timeout=60s
-                    echo "Done! Port-forward with: kubectl port-forward svc/mi-app 3000:3000"
-                '''
-            }
-        }
             }
             post {
                 failure {
@@ -236,7 +208,7 @@ pipeline {
             cleanWs()
         }
         success { 
-            echo 'Pipeline successful - Run: kubectl port-forward svc/mi-app 3000:3000'
+            echo 'Pipeline successful - Application deployed at http://localhost:80'
         }
         failure { 
             echo 'Pipeline failed. Review logs above for details.'
