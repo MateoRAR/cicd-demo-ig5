@@ -35,22 +35,22 @@ pipeline {
                     env:
                     - name: DOCKER_HOST
                       value: tcp://localhost:2375
-                   - name: trivy
-                     image: aquasec/trivy:latest
-                     command:
-                     - sleep
-                     args:
-                     - infinity
-                     env:
-                     - name: DOCKER_HOST
-                       value: tcp://localhost:2375
-                     resources:
-                       requests:
-                         memory: "1Gi"
-                         cpu: "500m"
-                       limits:
-                         memory: "2Gi"
-                         cpu: "1"
+                  - name: trivy
+                    image: aquasec/trivy:latest
+                    command:
+                    - sleep
+                    args:
+                    - infinity
+                    env:
+                    - name: DOCKER_HOST
+                      value: tcp://localhost:2375
+                    resources:
+                      requests:
+                        memory: "1Gi"
+                        cpu: "500m"
+                      limits:
+                        memory: "2Gi"
+                        cpu: "1"
                   - name: kubectl
                     image: bitnami/kubectl:latest
                     command:
