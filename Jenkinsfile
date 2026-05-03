@@ -186,16 +186,9 @@ pipeline {
                             export APP_NAME=mi-app
                             export ENV=production
                             export BUILD_VERSION=${BUILD_NUMBER}
-                            
-                            # Create/Update RBAC resources
-                            kubectl create clusterrole mi-app-role --verb=get,list,watch,create,update,patch,delete --resource=deployments,services --dry-run=client -o yaml | kubectl apply -f -
-                            kubectl create clusterrolebinding mi-app-binding --clusterrole=mi-app-role --serviceaccount=default:default --dry-run=client -o yaml | kubectl apply -f -
-                            
-                            # Deploy application
                             cat k8s-config/deployment.tmpl.yml | \
-                                sed "s|\\\$APP_NAME|${APP_NAME}|g; s|\\\$ENV|${ENV}|g; s|\\\$BUILD_VERSION|${BUILD_VERSION}|g; s|\\\$REGISTRY_USERNAME|${REGISTRY_USERNAME}|g" | \
+                                sed "s|\$APP_NAME|${APP_NAME}|g; s|\$ENV|${ENV}|g; s|\$BUILD_VERSION|${BUILD_VERSION}|g; s|\$REGISTRY_USERNAME|${REGISTRY_USERNAME}|g" | \
                                 kubectl apply -f -
-                            
                             kubectl rollout status deployment/${APP_NAME}-deployment --timeout=5m
                             echo "App available at: http://$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'):30080"
                         '''
