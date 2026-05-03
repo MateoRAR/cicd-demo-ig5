@@ -220,8 +220,8 @@ pipeline {
         always {
             cleanWs()
         }
-        success { 
-            echo 'Pipeline successful - Application deployed at http://localhost:80'
+        success {
+            echo 'Pipeline successful - Application deployed. Access via: kubectl port-forward service/mi-app-service 8080:80'
         }
         failure { 
             echo 'Pipeline failed. Review logs above for details.'
