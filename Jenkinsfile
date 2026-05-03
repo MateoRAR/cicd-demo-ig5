@@ -208,6 +208,27 @@ pipeline {
                 '''
             }
         }
+            }
+            post {
+                failure {
+                    container('docker') {
+                        sh '''
+                            echo "DEPLOY FAILED - Diagnostic information:"
+                            echo "======================================="
+                            echo ""
+                            echo "Container status:"
+                            docker ps -a --filter "name=mi-app" || echo "No mi-app container found"
+                            echo ""
+                            echo "Container logs:"
+                            docker logs mi-app 2>/dev/null || echo "No logs available"
+                            echo ""
+                            echo "Image status:"
+                            docker images | grep mi-app || echo "No mi-app image found"
+                        '''
+                    }
+                }
+            }
+        }
     }
 
     post {
