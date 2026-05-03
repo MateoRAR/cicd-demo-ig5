@@ -183,14 +183,18 @@ pipeline {
                 container('kubectl') {
                     withCredentials([usernamePassword(credentialsId: 'docker-registry', usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
                         sh '''
-                            export APP_NAME=mi-app
-                            export ENV=production
-                            export BUILD_VERSION=${BUILD_NUMBER}
-                            cat k8s-config/deployment.tmpl.yml | \
-                                sed "s|\$APP_NAME|${APP_NAME}|g; s|\$ENV|${ENV}|g; s|\$BUILD_VERSION|${BUILD_VERSION}|g; s|\$REGISTRY_USERNAME|${REGISTRY_USERNAME}|g" | \
-                                kubectl apply -f -
+                            APP_NAME=mi-app
+                            ENV=production
+                            BUILD_VERSION=${BUILD_NUMBER}
+                            sed \
+                                -e 's|\$APP_NAME|'"${APP_NAME}"'|g' \
+                                -e 's|\$ENV|'"${ENV}"'|g' \
+                                -e 's|\$BUILD_VERSION|'"${BUILD_VERSION}"'|g' \
+                                -e 's|\$REGISTRY_USERNAME|'"${REGISTRY_USERNAME}"'|g' \
+                                k8s-config/deployment.tmpl.yml | kubectl apply -f -
                             kubectl rollout status deployment/${APP_NAME}-deployment --timeout=5m
-                            echo "App available at: http://$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'):30080"
+                            NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+                            echo "App available at: http://${NODE_IP}:30080"
                         '''
                     }
                 }
