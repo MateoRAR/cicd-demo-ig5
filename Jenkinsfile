@@ -35,15 +35,22 @@ pipeline {
                     env:
                     - name: DOCKER_HOST
                       value: tcp://localhost:2375
-                  - name: trivy
-                    image: aquasec/trivy:latest
-                    command:
-                    - sleep
-                    args:
-                    - infinity
-                    env:
-                    - name: DOCKER_HOST
-                      value: tcp://localhost:2375
+                   - name: trivy
+                     image: aquasec/trivy:latest
+                     command:
+                     - sleep
+                     args:
+                     - infinity
+                     env:
+                     - name: DOCKER_HOST
+                       value: tcp://localhost:2375
+                     resources:
+                       requests:
+                         memory: "1Gi"
+                         cpu: "500m"
+                       limits:
+                         memory: "2Gi"
+                         cpu: "1"
                   - name: kubectl
                     image: bitnami/kubectl:latest
                     command:
@@ -142,13 +149,13 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 container('trivy') {
-                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignorefile .trivyignore mi-app:latest'
+                    sh 'trivy clean --java-db && trivy image --timeout 15m --exit-code 1 --severity CRITICAL --ignorefile .trivyignore mi-app:latest'
                 }
             }
             post {
                 always {
                     container('trivy') {
-                        sh 'trivy image --severity CRITICAL,HIGH --ignore-unfixed --format table --output trivy-report.txt mi-app:latest || true'
+                        sh 'trivy image --timeout 15m --severity CRITICAL,HIGH --ignore-unfixed --format table --output trivy-report.txt mi-app:latest || true'
                     }
                     archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
                 }
