@@ -1,5 +1,7 @@
 # cicd-demo-ig5
 
+Mateo Rubio y Martin Gomez
+
 A CI/CD demonstration project for a Spring Boot application, automated end-to-end through Jenkins running on a local Kubernetes cluster (Kind). The pipeline covers compilation, unit testing, code coverage, static analysis, container security scanning, image publishing, and deployment to Kubernetes.
 
 ---
