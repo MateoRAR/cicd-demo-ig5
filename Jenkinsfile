@@ -142,13 +142,13 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 container('trivy') {
-                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignorefile .trivyignore --timeout 15m mi-app:latest'
+                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignorefile .trivyignore mi-app:latest'
                 }
             }
             post {
                 always {
                     container('trivy') {
-                        sh 'trivy image --severity CRITICAL,HIGH --ignore-unfixed --format table --output trivy-report.txt --timeout 15m mi-app:latest || true'
+                        sh 'trivy image --severity CRITICAL,HIGH --ignore-unfixed --format table --output trivy-report.txt mi-app:latest || true'
                     }
                     archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
                 }
