@@ -44,6 +44,14 @@ pipeline {
                     env:
                     - name: DOCKER_HOST
                       value: tcp://localhost:2375
+                  - name: kubectl
+                    image: bitnami/kubectl:latest
+                    command:
+                    - sleep
+                    args:
+                    - infinity
+                    securityContext:
+                      runAsUser: 0
                   volumes:
                   - name: docker-storage
                     emptyDir: {}
@@ -134,68 +142,62 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 container('trivy') {
-                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignorefile .trivyignore mi-app:latest'
+                    sh 'trivy image --exit-code 1 --severity CRITICAL --ignorefile .trivyignore --timeout 15m mi-app:latest'
                 }
             }
             post {
                 always {
                     container('trivy') {
-                        sh 'trivy image --severity CRITICAL,HIGH --ignore-unfixed --format table --output trivy-report.txt mi-app:latest || true'
+                        sh 'trivy image --severity CRITICAL,HIGH --ignore-unfixed --format table --output trivy-report.txt --timeout 15m mi-app:latest || true'
                     }
                     archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
                 }
             }
         }
 
-        stage('Deploy') {
+        stage('Push Image') {
             steps {
                 container('docker') {
-                    sh '''
-                        echo "Waiting for Docker daemon..."
-                        until docker info > /dev/null 2>&1; do 
-                            sleep 2
-                        done
-                        
-                        echo "Cleaning up previous container if exists..."
-                        docker stop mi-app || true
-                        docker rm mi-app || true
-                        sleep 1
-                        
-                        echo "Deploying application..."
-                        docker run -d \
-                            --name mi-app \
-                            -p 80:80 \
-                            --restart=unless-stopped \
-                            mi-app:latest
-                        
-                        sleep 3
-                        
-                        if docker ps | grep -q mi-app; then
-                            echo "Container deployed successfully"
-                            echo "Application available at: http://localhost:80"
-                        else
-                            echo "ERROR: Container is not running"
-                            docker logs mi-app || true
-                            exit 1
-                        fi
-                    '''
+                    withCredentials([usernamePassword(credentialsId: 'docker-registry', usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
+                        sh '''
+                            docker login -u $REGISTRY_USERNAME -p $REGISTRY_PASSWORD
+                            docker tag mi-app:latest $REGISTRY_USERNAME/mi-app:${BUILD_NUMBER}
+                            docker tag mi-app:latest $REGISTRY_USERNAME/mi-app:latest
+                            docker push $REGISTRY_USERNAME/mi-app:${BUILD_NUMBER}
+                            docker push $REGISTRY_USERNAME/mi-app:latest
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                container('kubectl') {
+                    withCredentials([usernamePassword(credentialsId: 'docker-registry', usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
+                        sh '''
+                            export APP_NAME=mi-app
+                            export ENV=production
+                            export BUILD_VERSION=${BUILD_NUMBER}
+                            cat k8s-config/deployment.tmpl.yml | \
+                                sed "s|\$APP_NAME|${APP_NAME}|g; s|\$ENV|${ENV}|g; s|\$BUILD_VERSION|${BUILD_VERSION}|g; s|\$REGISTRY_USERNAME|${REGISTRY_USERNAME}|g" | \
+                                kubectl apply -f -
+                            kubectl rollout status deployment/${APP_NAME}-deployment --timeout=5m
+                            echo "App available at: http://$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'):30080"
+                        '''
+                    }
                 }
             }
             post {
                 failure {
-                    container('docker') {
+                    container('kubectl') {
                         sh '''
-                            echo "DEPLOY FAILED - Diagnostic information:"
-                            echo "======================================="
-                            echo ""
-                            echo "Container status:"
-                            docker ps -a --filter "name=mi-app" || echo "No mi-app container found"
-                            echo ""
-                            echo "Container logs:"
-                            docker logs mi-app 2>/dev/null || echo "No logs available"
-                            echo ""
-                            echo "Image status:"
-                            docker images | grep mi-app || echo "No mi-app image found"
+                            echo "=== Deployment status ==="
+                            kubectl get deployment mi-app-deployment || true
+                            echo "=== Pod status ==="
+                            kubectl get pods -l application=mi-app || true
+                            echo "=== Pod logs ==="
+                            kubectl logs -l application=mi-app --tail=50 || true
                         '''
                     }
                 }
